@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <random>
+#include <utility>
 
 #include <glm/glm/gtc/matrix_transform.hpp>
 #include <glm/glm/gtc/type_ptr.hpp>
@@ -18,6 +19,48 @@ float pi = 3.14159265359;
 
 GLFWwindow* window;
 
+void generate_sphere(float size, int steps, std::vector<float>& sphereVertices, std::vector<unsigned int>& sphereIndices) {
+    
+    // Vertices
+    for (int i = 0; i <= steps; i++) { // needs to be - 1 because bl and
+        float phi = -90.0f + (180.0f * (float)i / steps);
+        float phi_rad = glm::radians(phi);
+        for (int j = 0; j <= steps; j++) {
+            float theta = 360 * j / steps;
+            float theta_rad = glm::radians(theta);
+
+            // 3D pos
+            float x = size * glm::cos(phi_rad) * glm::cos(theta_rad);
+            float y = size * glm::cos(phi_rad) * glm:: sin(theta_rad);
+            float z = size * glm::sin(phi_rad);
+
+            sphereVertices.push_back(x);
+            sphereVertices.push_back(y);
+            sphereVertices.push_back(z);
+        }
+    }
+
+    // Indices
+    for (int i = 0; i < steps; i++) {
+        for (int j = 0; j < steps; j++) {
+            unsigned int bl = i * (steps + 1) + j;
+            unsigned int br = bl + 1;
+            unsigned int tl = (i + 1) * (steps + 1) + j;
+            unsigned int tr = tl + 1;
+
+            // Push top left
+            sphereIndices.push_back(bl);
+            sphereIndices.push_back(tl);
+            sphereIndices.push_back(tr);
+
+            // Push bottom right
+            sphereIndices.push_back(tr);
+            sphereIndices.push_back(br);
+            sphereIndices.push_back(bl);
+        }
+    }
+    return;
+}
 struct Particle {
     glm::vec3 position;
     glm::vec3 velocity;
@@ -118,6 +161,8 @@ int main() {
         return -1;
     }
 
+    // Rectangle
+
     // Dots
     float vertices[] = {
         // Front face
@@ -141,7 +186,7 @@ int main() {
         4, 0, 7, 0, 3, 7, // Top face
         1, 5, 2, 5, 6, 2  // Bottom face
     };
-
+    
     VAO rectVAO;
     rectVAO.bind();
 
@@ -151,8 +196,30 @@ int main() {
     rectVAO.linkAttrib(rectVBO, 0, 3, GL_FLOAT, 3 * sizeof(float), (void*)0);
     rectVAO.unbind();  
 
+    // BlackHole Circle
+    std::vector<float> sphereVertices;
+    std::vector<unsigned int> sphereIndices;
+
+    // Blackhole size
+    generate_sphere(3.0f, 30, sphereVertices, sphereIndices);
+
+    VAO sphereVAO;
+    sphereVAO.bind();
+
+    // Vector cant be sizeof-ed!
+    // Use .data() to get the raw array, and .size() * sizeof() for the exact byte count
+    VBO sphereVBO(sphereVertices.data(), sphereVertices.size() * sizeof(float));
+    EBO sphereEBO(sphereIndices.data(), sphereIndices.size() * sizeof(unsigned int));
+    sphereVAO.linkAttrib(sphereVBO, 0, 3, GL_FLOAT, 3 * sizeof(float), (void*)0);
+    sphereVAO.unbind();  
+
+
+
+
+
+    // Particles
     std::vector<Particle> particles;
-    int numParticles = 100;
+    int numParticles = 400;
 
     Particle blackHole;
     blackHole.velocity = glm::vec3(0.0f);
@@ -173,7 +240,18 @@ int main() {
         Particle p;
 
          // Disc
-        float ranDistance = 20.0f;
+        int ringBand = static_cast<int>(get_random(0.0f, 500.0f));
+        float innerBase = 4.0f;   // Where the innermost ring starts
+        float ringWidth = 0.6f;   // How thick each ring band is
+        float gapWidth = 0.25f;   // How wide the empty space is between rings
+
+        // 3. Mathematically calculate the min and max for the chosen ring band
+        float ringInnerRadius = innerBase + (ringBand * (ringWidth + gapWidth));
+        float ringOuterRadius = ringInnerRadius + ringWidth;
+
+        // 4. Get a random distance inside that specific ring's boundaries
+        float ranDistance = get_random(ringInnerRadius, ringOuterRadius);
+
         float ranAngle = get_random(0, 2*pi);
         float effectiveMass = blackHole.mass + (particles.size() * p.mass);
         float v = glm::sqrt(G*effectiveMass/ranDistance);
@@ -186,18 +264,22 @@ int main() {
 
         glm::vec3 vTotal = directionPerpendicular * v;
 
-        float maxSpeed = 1.0f;
-        float heatFactor = glm::clamp(v / maxSpeed, 0.0f, 1.0f);
 
+        float minDistance = 6.0f;
+        float maxDistance = 25.0f;
+        float deltaDistance = glm::length(p.position - p.position[0]);
+        float distFactor = glm::clamp((deltaDistance - minDistance) / (maxDistance - minDistance), 0.0f, 1.0f);
+        p.color = glm::vec4(1.0f - distFactor, 0.3f, distFactor, 1.0f);
+        
         p.position = polarCoordinates;
         p.life = get_random(1.0f, 3.0f);
         p.maxlife = p.life;
 
         p.scale = get_random(1.0f, 2.0f);;
         p.mass = 0.5f;
-        p.color = glm::vec4(heatFactor, 0.0f, 1.0f - heatFactor, 1.0f);
+
         p.velocity = vTotal;
-        p.history.push_back(p.position);
+        p.history.push_back(p.position);    
         
         particles.push_back(p);
     }   
@@ -259,12 +341,58 @@ int main() {
 
     Shader shaderProgram(vertexShaderSource, fragmentShaderSource);
 
-    
+    // Vertex Shader of Sphere
+
+    const char* vertexShaderSourceSphere = 
+    "#version 330 core\n"
+    "layout (location = 0) in vec3 aPos;\n"
+    "uniform mat4 model;\n"
+    "uniform mat4 view;\n"
+    "uniform mat4 projection;\n"
+    "out vec3 FragPos;\n"
+    "out vec3 Normal;\n" // Lighting!
+    "void main() {\n"
+    "   FragPos = vec3(model * vec4(aPos, 1.0));\n"
+    // Shortcut: For a sphere at origin, position = normal!
+    "   Normal = normalize(mat3(model) * aPos);\n"
+    "   gl_Position = projection * view * model * vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
+    "}\n";
+
+    const char* fragmentShaderSourceSphere = 
+    "#version 330 core\n"
+    "out vec4 FragColor;\n"
+    "in vec3 FragPos;\n"
+    "in vec3 Normal;\n"
+    "uniform vec4 sphereColor;\n"
+    "void main() {\n"
+    // Ambiant lighting
+    "   float ambientStrength = 0.15;\n"
+    "   vec3 ambient = ambientStrength * sphereColor.rgb;\n"
+    // Diffuse ligthing
+    "   vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));\n"
+    // Calculate Angle
+    "   float diff = max(dot(Normal, lightDir), 0.0);\n"
+    "   vec3 diffuse = diff * sphereColor.rgb;\n"
+    // Result
+    "   vec3 result = ambient + diffuse;\n"
+    "   FragColor = vec4(result, 1.0);\n"
+    "}\n";
+
+    Shader shaderProgramSphere(vertexShaderSourceSphere, fragmentShaderSourceSphere);
+
+    // For Cube
     int modelLocation = glGetUniformLocation(shaderProgram.ID, "model");
     int viewLocation = glGetUniformLocation(shaderProgram.ID, "view");
     int projectionLocation = glGetUniformLocation(shaderProgram.ID, "projection");
 
-    glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+    // For sphere
+
+    int modelLocationSphere = glGetUniformLocation(shaderProgramSphere.ID, "model");
+    int viewLocationSphere = glGetUniformLocation(shaderProgramSphere.ID, "view");
+    int projectionLocationSphere = glGetUniformLocation(shaderProgramSphere.ID, "projection");
+    int colorLocationSphere = glGetUniformLocation(shaderProgramSphere.ID, "sphereColor");
+    // Spawn loc of camera
+    glm::vec3 cameraPos = glm::vec3(0.0f, 10.0f, 14.0f);
     glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
     glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
     glEnable(GL_DEPTH_TEST);
@@ -281,7 +409,7 @@ int main() {
         
         // Clear with black
         glClearColor(0.1f, 0.1f, 0.1f, 0.1f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // GK mudeng
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Both calls at once
         // color -> screen, depth -> forget z axis
         // Delta time
         float currentFrame = glfwGetTime();
@@ -291,11 +419,8 @@ int main() {
         lastFrame = currentFrame;
 
         // Shader
-        shaderProgram.use();
-
         instancedData.clear();
 
-        
         for (Particle& p : particles) {
             p.acceleration = glm::vec3(0.0f, 0.0f, 0.0f);
         }
@@ -323,76 +448,82 @@ int main() {
 
 
         for (Particle& p : particles) {
+            if (&p == &particles[0]) {
+                continue;
+            }
+            float deltaDistance = glm::length(p.position - p.position[0]);
+
+            float minDistance = 6.0f;
+            float maxDistance = 25.0f;
+            float distFactor = glm::clamp((deltaDistance - minDistance) / (maxDistance - minDistance), 0.0f, 1.0f);
+            p.color = glm::vec4(1.0f - distFactor, 0.3f, distFactor, 1.0f);
             p.life -= deltaTime * 0.5f;
             float colorFade = p.life/p.maxlife;
             
             // Position 
-            if (&p != &particles[0]) {
-                for (int h = 0; h < p.history.size(); h++) {
-                    float fade = (float)h / p.history.size();
-                    p.color = glm::vec4(1.0f, 1.0f, 1.0f, 0.05f);
-                    if (fade <= 0.8f) {
-                        fade = 0.0f;
-                    }
+            p.velocity += p.acceleration * deltaTime;
+            p.position += p.velocity * deltaTime;
+            float speed = glm::length(p.velocity);
+           
+            
+            p.history.push_back(p.position);
 
-                    instancedData.push_back(p.history[h].x);
-                    instancedData.push_back(p.history[h].y);
-                    instancedData.push_back(p.history[h].z);
-
-                    
-                    instancedData.push_back(p.color.r);
-                    instancedData.push_back(p.color.g);
-                    instancedData.push_back(p.color.b);
-                    instancedData.push_back(p.color.a * fade);
-
-                    instancedData.push_back(p.scale * fade);
-
-                }
-
-                p.velocity += p.acceleration * deltaTime;
-                p.position += p.velocity * deltaTime;
-                float speed = glm::length(p.velocity);
-                float heatFactor = glm::clamp(speed / 1.0f, 0.0f, 1.0f);
-                p.color = glm::vec4(heatFactor, 0.0f, 1.0f - heatFactor, 1.0f);
-                p.history.push_back(p.position);
-
-                // Trail effect
-                if (p.history.size() > 15) {
-                    p.history.erase(p.history.begin()); // Deletes the oldest entry at index 0
-                }
-
-                
-                
-                // Life
-                if (p.position.x > 100.0f || p.position.x < -100.0f) {
-                    p.life = 0;
-                } else if (p.position.y > 100.0f || p.position.y < -100.0f) {
-                    p.life = 0;
-                } 
-                
-
-                if (p.life <= 0) {
-                    
-                    float ranDistance = 20.0f;
-                    float ranAngle = get_random(0, 2*pi);
-
-                    float v = glm::sqrt(G*blackHole.mass/ranDistance);
-
-                    glm::vec3 polarCoordinates = glm::vec3(ranDistance * cos(ranAngle), 0.2f, ranDistance * sin(ranAngle));
-                    glm::vec3 polarPerpendicular = glm::vec3(-1*sin(ranAngle) * ranDistance, 0, cos(ranAngle) * ranDistance);
-                    
-
-                    glm::vec3 directionPerpendicular = glm::normalize(polarPerpendicular);
-
-                    glm::vec3 vTotal = directionPerpendicular * v;
-                    p.position = polarCoordinates;
-                    p.velocity = vTotal;
-                    p.life = p.maxlife;
-                    
-                    p.history.clear();
-                    }
-                p.color.a = colorFade;
+            // Trail effect
+            if (p.history.size() > 15) {
+                p.history.erase(p.history.begin()); // Deletes the oldest entry at index 0
             }
+
+            for (int h = 0; h < p.history.size(); h++) {
+                float fade = (float)h / p.history.size(); // Newest biggest
+                instancedData.push_back(p.history[h].x);
+                instancedData.push_back(p.history[h].y);
+                instancedData.push_back(p.history[h].z);
+
+                instancedData.push_back(p.color.r);
+                instancedData.push_back(p.color.g);
+                instancedData.push_back(p.color.b);
+                instancedData.push_back(p.color.a);
+
+                instancedData.push_back(p.scale * fade);
+            }
+            // Life
+            if (p.position.x > 100.0f || p.position.x < -100.0f) {
+                p.life = 0;
+            } else if (p.position.y > 100.0f || p.position.y < -100.0f) {
+                p.life = 0;
+            } 
+            
+
+            if (p.life <= 0) {
+                int ringBand = static_cast<int>(get_random(0.0f, 500.0f));
+                float innerBase = 4.0f;   // Where the innermost ring starts
+                float ringWidth = 0.6f;   // How thick each ring band is
+                float gapWidth = 0.25f;   // How wide the empty space is between rings
+
+                // 3. Mathematically calculate the min and max for the chosen ring band
+                float ringInnerRadius = innerBase + (ringBand * (ringWidth + gapWidth));
+                float ringOuterRadius = ringInnerRadius + ringWidth;
+
+                // 4. Get a random distance inside that specific ring's boundaries
+                float ranDistance = get_random(ringInnerRadius, ringOuterRadius);
+
+                float ranAngle = get_random(0, 2*pi);
+
+                float v = glm::sqrt(G*blackHole.mass/ranDistance);
+
+                glm::vec3 polarCoordinates = glm::vec3(ranDistance * cos(ranAngle), 0.2f, ranDistance * sin(ranAngle));
+                glm::vec3 polarPerpendicular = glm::vec3(-1*sin(ranAngle) * ranDistance, 0, cos(ranAngle) * ranDistance);
+                
+                glm::vec3 directionPerpendicular = glm::normalize(polarPerpendicular);
+
+                glm::vec3 vTotal = directionPerpendicular * v;
+                p.position = polarCoordinates;
+                p.velocity = vTotal;
+                p.life = p.maxlife;
+                
+                p.history.clear();
+            }
+            p.color.a = colorFade;
             
             
             instancedData.push_back(p.position.x);
@@ -429,12 +560,26 @@ int main() {
         glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
         glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+        
 
+        // For the Sphere
+        shaderProgramSphere.use();
+
+        glUniformMatrix4fv(modelLocationSphere, 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(viewLocationSphere, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(projectionLocationSphere, 1, GL_FALSE, glm::value_ptr(projection));
+        // Colour sphere
+        glUniform4f(colorLocationSphere, 0.9804f, 0.8980f, 0.7490f, 1.0f);
+        sphereVAO.bind();
+        glDrawElements(GL_TRIANGLES, sphereIndices.size(), GL_UNSIGNED_INT, 0);
+        sphereVAO.unbind();
+
+        shaderProgram.use();
         rectVAO.bind();
         // vertices!
         int totalInstances = instancedData.size() / 8;
         glDrawElementsInstanced(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0, totalInstances);
-
+        rectVAO.unbind();
         glfwSwapBuffers(window);
         glfwPollEvents();   
 

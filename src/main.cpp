@@ -113,7 +113,7 @@ void mouseCallBack(GLFWwindow* window, double xpos, double ypos) {
         firstMouse = false;
     }
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // Gk mudeng
+    float yoffset = lastY - ypos;
     lastX = xpos;
     lastY = ypos;
 
@@ -206,7 +206,7 @@ int main() {
     VAO sphereVAO;
     sphereVAO.bind();
 
-    // Vector cant be sizeof-ed!
+    // Vector cant be sizeof-ed
     // Use .data() to get the raw array, and .size() * sizeof() for the exact byte count
     VBO sphereVBO(sphereVertices.data(), sphereVertices.size() * sizeof(float));
     EBO sphereEBO(sphereIndices.data(), sphereIndices.size() * sizeof(unsigned int));
@@ -241,15 +241,14 @@ int main() {
 
          // Disc
         int ringBand = static_cast<int>(get_random(0.0f, 500.0f));
-        float innerBase = 4.0f;   // Where the innermost ring starts
-        float ringWidth = 0.6f;   // How thick each ring band is
-        float gapWidth = 0.25f;   // How wide the empty space is between rings
+        float innerBase = 4.0f;
+        float ringWidth = 0.6f;
+        float gapWidth = 0.25f;
 
-        // 3. Mathematically calculate the min and max for the chosen ring band
         float ringInnerRadius = innerBase + (ringBand * (ringWidth + gapWidth));
         float ringOuterRadius = ringInnerRadius + ringWidth;
 
-        // 4. Get a random distance inside that specific ring's boundaries
+
         float ranDistance = get_random(ringInnerRadius, ringOuterRadius);
 
         float ranAngle = get_random(0, 2*pi);
@@ -496,15 +495,12 @@ int main() {
 
             if (p.life <= 0) {
                 int ringBand = static_cast<int>(get_random(0.0f, 500.0f));
-                float innerBase = 4.0f;   // Where the innermost ring starts
-                float ringWidth = 0.6f;   // How thick each ring band is
-                float gapWidth = 0.25f;   // How wide the empty space is between rings
+                float innerBase = 4.0f;
+                float ringWidth = 0.6f;
+                float gapWidth = 0.25f;
 
-                // 3. Mathematically calculate the min and max for the chosen ring band
                 float ringInnerRadius = innerBase + (ringBand * (ringWidth + gapWidth));
                 float ringOuterRadius = ringInnerRadius + ringWidth;
-
-                // 4. Get a random distance inside that specific ring's boundaries
                 float ranDistance = get_random(ringInnerRadius, ringOuterRadius);
 
                 float ranAngle = get_random(0, 2*pi);
